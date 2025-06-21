@@ -4,7 +4,7 @@ import CoreGraphics
 struct RFModel {
     static func calculateRSSI(
         ap: AccessPoint,
-        receiver: Point,
+        receiver: CGPoint,
         frequencyMHz: CGFloat,
         walls: [Wall],
         metersPerPixel: CGFloat
@@ -23,8 +23,8 @@ struct RFModel {
         return ap.txPower - fspl - wallLoss
     }
 
-    static func intersects(p1: Point, p2: Point, q1: Point, q2: Point) -> Bool {
-        func ccw(_ a: Point, _ b: Point, _ c: Point) -> Bool {
+    static func intersects(p1: CGPoint, p2: CGPoint, q1: CGPoint, q2: CGPoint) -> Bool {
+        func ccw(_ a: CGPoint, _ b: CGPoint, _ c: CGPoint) -> Bool {
             (c.y - a.y) * (b.x - a.x) > (b.y - a.y) * (c.x - a.x)
         }
         return ccw(p1, q1, q2) != ccw(p2, q1, q2) && ccw(p1, p2, q1) != ccw(p1, p2, q2)

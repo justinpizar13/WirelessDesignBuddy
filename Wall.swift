@@ -15,11 +15,11 @@ enum WallMaterial: String, CaseIterable, Codable {
 
 struct Wall: Identifiable, Codable {
     let id: UUID
-    var start: Point
-    var end: Point
+    var start: CGPoint
+    var end: CGPoint
     var material: WallMaterial
 
-    init(id: UUID = UUID(), start: Point, end: Point, material: WallMaterial) {
+    init(id: UUID = UUID(), start: CGPoint, end: CGPoint, material: WallMaterial) {
         self.id = id
         self.start = start
         self.end = end

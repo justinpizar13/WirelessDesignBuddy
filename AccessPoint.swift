@@ -3,11 +3,11 @@ import CoreGraphics
 
 struct AccessPoint: Identifiable, Codable {
     let id: UUID
-    var location: Point
+    var location: CGPoint
     var txPower: CGFloat
     var isEnabled: Bool
 
-    init(id: UUID = UUID(), location: Point, txPower: CGFloat, isEnabled: Bool = true) {
+    init(id: UUID = UUID(), location: CGPoint, txPower: CGFloat, isEnabled: Bool = true) {
         self.id = id
         self.location = location
         self.txPower = txPower

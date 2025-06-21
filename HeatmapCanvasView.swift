@@ -32,7 +32,7 @@ struct HeatmapCanvasView: View {
 
         for y in 0..<h {
             for x in 0..<w {
-                let pt = Point(x: CGFloat(x), y: CGFloat(y))
+                let pt = CGPoint(x: CGFloat(x), y: CGFloat(y))
                 var combinedRSSI: CGFloat
 
                 switch blendMode {

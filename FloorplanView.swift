@@ -33,8 +33,8 @@ struct FloorplanView: View {
     @State private var floorplanImage: UIImage? = nil
     @State private var selectedItem: PhotosPickerItem? = nil
 
-    @State private var scaleLine: (start: Point, end: Point)? = nil
-    @State private var wallLine: (start: Point, end: Point)? = nil
+    @State private var scaleLine: (start: CGPoint, end: CGPoint)? = nil
+    @State private var wallLine: (start: CGPoint, end: CGPoint)? = nil
     @State private var metersPerPixel: CGFloat = 0.0
 
     @State private var walls: [Wall] = []
@@ -76,15 +76,14 @@ struct FloorplanView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                           // 1. Background floorplan
-                           if let img = floorplanImage {
-                               Image(uiImage: img)
-                                   .resizable()
-                                   .scaledToFit()
-                           } else {
-                               Color.white
-                           }
+                if let img = floorplanImage {
+                    Image(uiImage: img)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
 
+                } else {
+                    Color.white
+                }
                            // 2. Heatmap
                            if showHeatmap && fullyInitialized {
                                HeatmapCanvasView(
@@ -99,11 +98,14 @@ struct FloorplanView: View {
                            }
 
                            // 3. Live scale line + label
-                           if let line = scaleLine {
-                               Path { p in
-                                   p.move(to: canvasPos(line.start))
-                                   p.addLine(to: canvasPos(line.end))
-                               }
+                if let line = scaleLine {
+                    let start = canvasPos(line.start)
+                    let end = canvasPos(line.end)
+                    Path { p in
+
+                        p.move(to: start)
+                        p.addLine(to: end)
+                    }
                                .stroke(Color.blue,
                                        style: StrokeStyle(lineWidth: 2/zoomScale, dash: [5]))
 
@@ -130,31 +132,32 @@ struct FloorplanView: View {
                            }
 
                            // 5. Existing walls + length labels
-                           ForEach(walls) { wall in
-                               Path { p in
-                                   p.move(to: canvasPos(wall.start))
-                                   p.addLine(to: canvasPos(wall.end))
-                               }
-                               .stroke(color(for: wall.material),
-                                       style: StrokeStyle(lineWidth: 2/zoomScale, lineCap: .round))
+                ForEach(walls) { wall in
+                    let start = canvasPos(wall.start)
+                    let end = canvasPos(wall.end)
+                    let mid = CGPoint(x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 - 12)
 
-                               let midX = (wall.start.x + wall.end.x) / 2
-                               let midY = (wall.start.y + wall.end.y) / 2
-                               let midPt = CGPoint(
-                                   x: midX * zoomScale + panOffset.width,
-                                   y: midY * zoomScale + panOffset.height - 12
-                               )
-                               let dx = wall.end.x - wall.start.x
-                               let dy = wall.end.y - wall.start.y
-                               let dist = sqrt(dx*dx + dy*dy) * metersPerPixel
-                               Text(String(format: "%.2f m", dist))
-                                   .font(.caption2)
-                                   .padding(4)
-                                   .background(Color.white.opacity(0.8))
-                                   .cornerRadius(4)
-                                   .position(midPt)
-                           }
+                    let dx = wall.end.x - wall.start.x
+                    let dy = wall.end.y - wall.start.y
+                    let dist = sqrt(dx * dx + dy * dy) * metersPerPixel
+                    let label = String(format: "%.2f m", dist)
 
+                    Group {
+                        Path { p in
+                            p.move(to: start)
+                            p.addLine(to: end)
+                        }
+                        .stroke(color(for: wall.material),
+                                style: StrokeStyle(lineWidth: 2/zoomScale, lineCap: .round))
+
+                        Text(label)
+                            .font(.caption2)
+                            .padding(4)
+                            .background(Color.white.opacity(0.8))
+                            .cornerRadius(4)
+                            .position(mid)
+                    }
+                }
                            // 6. Access points
                            ForEach(accessPoints.indices, id: \.self) { i in
                                Circle()
@@ -170,10 +173,9 @@ struct FloorplanView: View {
                                    )
                            }
                        }
-                        .coordinateSpace(name: "Canvas")
-                       // APPLY transforms & gestures to the entire canvas
-                       .scaleEffect(zoomScale)   // ← zoom entire canvas
-                       .offset(panOffset)        // ← pan entire canvas
+            .scaleEffect(zoomScale)
+            .offset(panOffset)
+            .coordinateSpace(name: "Canvas")
                        .gesture(                 // ← pan & zoom gesture on canvas
                            SimultaneousGesture(
                                MagnificationGesture()
@@ -195,9 +197,16 @@ struct FloorplanView: View {
                                    .onEnded { _ in lastOffset = panOffset }
                            )
                        )
+                       .gesture(
+                           DragGesture(minimumDistance: 0)
+                               .onEnded { value in
+                                   let canvas = toCanvasPoint(value.location)
+                                   accessPoints.append(AccessPoint(location: canvas, txPower: 9))
+                               }
+                       )
                        .conditionalHighPriorityGesture(
                            shouldAttach: currentMode == .setScale || currentMode == .drawWall,
-                           gesture: dragForScaleOrWall()
+                           gesture: dragForScaleOrWall(geo: geo)
                        )
             // Tap to add AP
             .simultaneousGesture(addTapGesture(geo: geo))
@@ -211,24 +220,12 @@ struct FloorplanView: View {
 
     // MARK: – GESTURES
 
-    private func dragForScaleOrWall() -> some Gesture {
-        DragGesture(minimumDistance: 0,
-                    coordinateSpace: .named("canvas"))
+    private func dragForScaleOrWall(geo: GeometryProxy) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named("Canvas"))
             .onChanged { v in
-                // Convert the drag's screen points into the canvas's coordinate space:
-                let startScreen = v.startLocation
-                let currScreen  = v.location
-                
-                //Invert the .offset(PanOffset) and .scaleEffect(zoomScale):
-                let start = Point(
-                    x: (startScreen.x - panOffset.width) / zoomScale,
-                    y: (startScreen.y - panOffset.height) / zoomScale
-                )
-                let curr  = Point(
-                    x: (currScreen.x  - panOffset.width) / zoomScale,
-                    y: (currScreen.y  - panOffset.height) / zoomScale
-                )
-                
+                let start = toCanvasPoint(v.startLocation)
+                let curr  = toCanvasPoint(v.location)
+
                 switch currentMode {
                 case .setScale where imageLoaded:
                     if scaleLine == nil { scaleLine = (start: start, end: start) }
@@ -300,9 +297,11 @@ struct FloorplanView: View {
             .onEnded {
                 guard currentMode == .moveAP && fullyInitialized else { return }
                 // Place AP at center—for a real app you’d capture the actual tap point
-                let center = CGPoint(x: geo.size.width/2, y: geo.size.height/2)
+                
+                let tap = CGPoint(x: geo.frame(in: .named("Canvas")).midX,
+                                 y: geo.frame(in: .named("Canvas")).midY)
                 accessPoints.append(
-                    AccessPoint(location: toCanvasPoint(center), txPower: 9)
+                    AccessPoint(location: toCanvasPoint(tap), txPower: 9)
                 )
             }
     }
@@ -434,19 +433,21 @@ struct FloorplanView: View {
         }
     }
 
-    private func toCanvasPoint(_ loc: CGPoint) -> Point {
-        Point(
+    private func toCanvasPoint(_ loc: CGPoint) -> CGPoint {
+        CGPoint(
             x: (loc.x - panOffset.width)  / zoomScale,
             y: (loc.y - panOffset.height) / zoomScale
         )
     }
 
-    private func canvasPos(_ pt: Point) -> CGPoint {
-        CGPoint(
-            x: pt.x * zoomScale + panOffset.width,
-            y: pt.y * zoomScale + panOffset.height
-        )
-    }
+    
+private func canvasPos(_ pt: CGPoint) -> CGPoint {
+    let x = pt.x * zoomScale + panOffset.width
+    let y = pt.y * zoomScale + panOffset.height
+    print("canvasPos: (\(pt.x), \(pt.y)) -> (\(x), \(y))")
+    return CGPoint(x: x, y: y)
+}
+
 
     private func loadImage() {
         Task {
